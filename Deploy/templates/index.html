@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sales Forecast</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+        }
+
+        form {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-top: 10px;
+        }
+
+        select,
+        input[type="text"] {
+            margin-top: 5px;
+            padding: 8px;
+            width: 100%;
+            box-sizing: border-box;
+            font-size: 16px;
+        }
+
+        button {
+            margin-top: 15px;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        h2 {
+            color: #333;
+            margin-top: 30px;
+        }
+
+        p {
+            font-size: 18px;
+            line-height: 1.5;
+        }
+
+        .error {
+            color: red;
+            font-size: 18px;
+        }
+
+        .charts-container {
+            display: flex;
+            justify-content: space-around;
+            margin: 30px 0;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        .small-chart {
+            width: 400px;
+            height: 300px;
+        }
+
+        .large-chart {
+            width: 800px;
+            height: 400px;
+        }
+
+        .image-container {
+            width: auto;
+            text-align: right;
+        }
+
+        .image-container img {
+            width: 150%;
+            height: auto;
+        }
+
+        .table-image-container {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .results-table {
+            margin-right: 20px;
+            border-collapse: collapse;
+            width: 100%;
+        }
+
+        .total-sales-table {
+            border-collapse: collapse;
+            width: 20%;
+            margin-top: 30px;
+        }
+
+        th, td {
+            padding: 10px;
+            text-align: center;
+            border: 1px solid black;
+        }
+
+        .download-button {
+            margin-top: 30px;
+            padding: 10px 20px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .download-button:hover {
+            background-color: #0056b3;
+        }
+
+    </style>
+    <!-- Chart.js from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+    <!-- jsPDF from CDN for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.4.0/jspdf.umd.min.js"></script>
+    <!-- html2canvas for capturing the page -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/0.4.1/html2canvas.min.js"></script>
+</head>
+
+<body>
+    <h1>Sales Prediction For Dillibazar Online Department Store</h1>
+
+    <form method="POST">
+        <label for="month">Month:</label>
+        <select name="month" id="month" required>
+            {% for month_num, month_name in months.items() %}
+            <option value="{{ month_num }}" {% if selected_month and month_num == selected_month %}selected{% endif %}>
+                {{ month_name }}
+            </option>
+            {% endfor %}
+        </select>
+
+        <label for="category">Category:</label>
+        <select name="category" id="category" required>
+            <option value="clothing" {% if selected_category == 'clothing' %}selected{% endif %}>Clothing</option>
+            <option value="cosmetics" {% if selected_category == 'cosmetics' %}selected{% endif %}>Cosmetics</option>
+            <option value="furniture" {% if selected_category == 'furniture' %}selected{% endif %}>Furniture</option>
+            <option value="gardening" {% if selected_category == 'gardening' %}selected{% endif %}>Gardening</option>
+        </select>
+
+        <label for="w1_sales">W1 Sales:</label>
+        <input type="text" name="w1_sales" id="w1_sales" required value="{{ request.form['w1_sales'] if request.form['w1_sales'] else '' }}" placeholder="Enter W1 Sales">
+
+        <button type="submit">Submit</button>
+    </form>
+
+    {% if results %}
+    <div class="table-image-container">
+        <div>
+            <h2>Prediction Results</h2>
+            <table class="results-table" border="1" cellpadding="10" cellspacing="0">
+                <thead>
+                    <tr>
+                        <th>Week</th>
+                        <th>Predicted Sales</th>
+                        <th>Lower Bound</th>
+                        <th>Upper Bound</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Week 2</td>
+                        <td>{{ results.predicted[0] }}</td>
+                        <td>{{ results.lower[0] }}</td>
+                        <td>{{ results.upper[0] }}</td>
+                    </tr>
+                    <tr>
+                        <td>Week 3</td>
+                        <td>{{ results.predicted[1] }}</td>
+                        <td>{{ results.lower[1] }}</td>
+                        <td>{{ results.upper[1] }}</td>
+                    </tr>
+                    <tr>
+                        <td>Week 4</td>
+                        <td>{{ results.predicted[2] }}</td>
+                        <td>{{ results.lower[2] }}</td>
+                        <td>{{ results.upper[2] }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <h2>Model Accuracy</h2>
+    <p>The accuracy of the model is: <strong>{{ results.accuracy|round(2) }}%</strong></p>
+
+    <!-- Charts for Week 2, Week 3, Week 4 -->
+    <h2>Sales by Week</h2>
+    <div class="charts-container">
+        <div>
+            <canvas id="week2Chart" class="small-chart"></canvas>
+        </div>
+        <div>
+            <canvas id="week3Chart" class="small-chart"></canvas>
+        </div>
+        <div>
+            <canvas id="week4Chart" class="small-chart"></canvas>
+        </div>
+    </div>
+
+    <div>
+        <h2>Total Sales for {{ months[selected_month] }}</h2>
+        <table class="total-sales-table" border="1" cellpadding="10" cellspacing="0">
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    <th>Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Predicted Sales</td>
+                    <td>{{ results.total_predicted }}</td>
+                </tr>
+                <tr>
+                    <td>Lower Bound</td>
+                    <td>{{ results.total_lower_bound }}</td>
+                </tr>
+                <tr>
+                    <td>Upper Bound</td>
+                    <td>{{ results.total_upper_bound }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Comparison Chart -->
+    <h2>Sales Comparison Across Weeks</h2>
+    <canvas id="comparisonChart" class="large-chart"></canvas>
+
+    <!-- Download Button -->
+    <button class="download-button" onclick="downloadPDF()">Download as PDF</button>
+    {% endif %}
+
+    <script>
+        {% if results %}
+        // Data for Week 2
+        var ctx2 = document.getElementById('week2Chart').getContext('2d');
+        new Chart(ctx2, {
+            type: 'bar',
+            data: {
+                labels: ['Predicted Sales', 'Lower Bound', 'Upper Bound'],
+                datasets: [{
+                    label: 'Week 2 Sales',
+                    data: [{{ results.predicted[0] }}, {{ results.lower[0] }}, {{ results.upper[0] }}],
+                    backgroundColor: ['#66c2a5', '#fc8d62', '#8da0cb'],
+                    borderColor: ['#328a55', '#e6550d', '#4d78a0'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                plugins: {
+                    legend: {
+                        display: false // Disable legend
+                    },
+                    title: {
+                        display: true,
+                        text: 'Week 2 Sales' // Title for Week 2
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+
+        // Data for Week 3
+        var ctx3 = document.getElementById('week3Chart').getContext('2d');
+        new Chart(ctx3, {
+            type: 'bar',
+            data: {
+                labels: ['Predicted Sales', 'Lower Bound', 'Upper Bound'],
+                datasets: [{
+                    label: 'Week 3 Sales',
+                    data: [{{ results.predicted[1] }}, {{ results.lower[1] }}, {{ results.upper[1] }}],
+                    backgroundColor: ['#66c2a5', '#fc8d62', '#8da0cb'],
+                    borderColor: ['#328a55', '#e6550d', '#4d78a0'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                plugins: {
+                    legend: {
+                        display: false // Disable legend
+                    },
+                    title: {
+                        display: true,
+                        text: 'Week 3 Sales' // Title for Week 3
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+
+        // Data for Week 4
+        var ctx4 = document.getElementById('week4Chart').getContext('2d');
+        new Chart(ctx4, {
+            type: 'bar',
+            data: {
+                labels: ['Predicted Sales', 'Lower Bound', 'Upper Bound'],
+                datasets: [{
+                    label: 'Week 4 Sales',
+                    data: [{{ results.predicted[2] }}, {{ results.lower[2] }}, {{ results.upper[2] }}],
+                    backgroundColor: ['#66c2a5', '#fc8d62', '#8da0cb'],
+                    borderColor: ['#328a55', '#e6550d', '#4d78a0'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                plugins: {
+                    legend: {
+                        display: false // Disable legend
+                    },
+                    title: {
+                        display: true,
+                        text: 'Week 4 Sales' // Title for Week 4
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+
+        // Comparison Chart for all weeks including the selected week value
+        // Comparison Chart for all weeks including the selected week value
+var ctx5 = document.getElementById('comparisonChart').getContext('2d');
+new Chart(ctx5, {
+    type: 'bar', // Base type is bar
+    data: {
+        labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
+        datasets: [
+            {
+                label: 'Selected Week Sales',
+                data: [{{ request.form['w1_sales'] }}, null, null, null],
+                backgroundColor: '#33acff', // Blue color for bar chart
+                type: 'bar', // Ensure this dataset is a bar
+                barThickness: 40 // Make the bar slightly smaller
+            },
+            {
+                label: 'Predicted Sales',
+                data: [null, {{ results.predicted[0] }}, {{ results.predicted[1] }}, {{ results.predicted[2] }}],
+                backgroundColor: 'rgba(76, 175, 80, 0.2)', // Green with transparency for filled area
+                borderColor: '#4CAF50',
+                fill: true, // Fill the area under the line
+                type: 'line' // Set this dataset to be a line chart
+            },
+            {
+                label: 'Lower Bound',
+                data: [null, {{ results.lower[0] }}, {{ results.lower[1] }}, {{ results.lower[2] }}],
+                backgroundColor: 'rgba(255, 206, 86, 0.2)', // Yellow with transparency for filled area
+                borderColor: '#FFCE56',
+                fill: true, // Fill the area under the line
+                type: 'line' // Set this dataset to be a line chart
+            },
+            {
+                label: 'Upper Bound',
+                data: [null, {{ results.upper[0] }}, {{ results.upper[1] }}, {{ results.upper[2] }}],
+                backgroundColor: 'rgba(255, 99, 132, 0.2)', // Red with transparency for filled area
+                borderColor: '#FF6384',
+                fill: true, // Fill the area under the line
+                type: 'line' // Set this dataset to be a line chart
+            }
+        ]
+    },
+    options: {
+        scales: {
+            y: {
+                beginAtZero: true
+            }
+        }
+    }
+});
+
+
+        {% endif %}
+
+        // Function to download the page as a PDF
+        function downloadPDF() {
+        html2canvas(document.body, {
+        scrollX: -window.scrollX, // Fix for the position when scrolled
+        scrollY: -window.scrollY, // Fix for the position when scrolled
+        scale: 2 // Increase resolution of the captured canvas
+        }).then(canvas => {
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF('p', 'mm', 'a4');
+        const imgWidth = 210; // A4 width in mm
+        const pageHeight = 295; // A4 height in mm
+        const imgHeight = canvas.height * imgWidth / canvas.width;
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft >= 0) {
+            position = heightLeft - imgHeight;
+            pdf.addPage();
+            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+            heightLeft -= pageHeight;
+        }
+
+        pdf.save('sales_forecast.pdf');
+    });
+}
+
+    </script>
+
+    {% if error %}
+    <p class="error">Error: {{ error }}</p>
+    {% endif %}
+</body>
+
+</html>
